@@ -30,7 +30,7 @@ class Server:
         self.host = host
         self.port = port
         self.train_workers = []
-        self.predict_workers = {}
+        self.predict_workers = []
         self.current_leader = None
         self.model = None
         self.lock = Lock()
@@ -49,6 +49,7 @@ class Server:
             elif data["action"] == "test":
                 print(f"Received testing request from {addr}")
                 prediction = self.distribute_testing(data["sentence"])
+                print(prediction)
                 conn.sendall(pickle.dumps(prediction))
             else:
                 raise ValueError(f"Unknown action: {data['action']}")
@@ -65,7 +66,7 @@ class Server:
                 print(f"Train Worker dynamically registered: {worker_address}")
                 
             elif worker_type == "predict" and worker_address not in self.predict_workers:
-                self.predict_workers[worker_address] = "free"
+                self.predict_workers.append(worker_address)
                 print(f"Predict Worker dynamically registered: {worker_address}")
                 
                 # Enviar el modelo al nuevo Predict Worker si está disponible
@@ -80,24 +81,13 @@ class Server:
                             sock.sendall(pickle.dumps(task))
                     except Exception as e:
                         print(f"Failed to send model to Predict Worker {worker_address}: {e}")
+    
     def elect_leader(self):
+        
         with self.lock:
-            available_workers = [worker for worker, status in self.predict_workers.items() if status == "free"]
-            
-            if not available_workers:
-                print("No available workers for leadership.")
-                self.current_leader = None
-                return
-
-            print("Starting leader election via voting ... ")
-            
-            votes = {worker: random.choice(available_workers) for worker in available_workers}
-            
-            votes_counts = Counter(votes.values())
-            
-            most_voted = max(votes_counts.items(), key = lambda x : x[1])[0]
-            self.current_leader = most_voted
-            print(f"New leader elected via voting: {self.current_leader}")
+            print("Starting leader election via voting...")
+            self.current_leader = random.choice(self.predict_workers)
+            print(f"New leader elected: {self.current_leader}")
     
     def distribute_training(self, tokens):
         """Distribuye tareas de entrenamiento equitativamente entre los workers."""
@@ -122,41 +112,23 @@ class Server:
         print("Modelo combinado")
 
     def distribute_testing(self, task):
-        
         with self.lock:
-
-            if not self.current_leader or self.predict_workers[self.current_leader] != "free":
-                self.elect_leader()
-        
-            if not self.current_leader:
-                print("No leader available for prediction.")
-                return None
-
-            available_workers = [
-                worker for worker, status in self.predict_workers.items()
-                if status == "free" and worker != self.current_leader
-            ]
+            print(self.predict_workers)
+            self.elect_leader()
+            print(self.current_leader)
             
-            if not available_workers:
-                print("No free workers available to assign the task.")
-                return
+            chosen_worker = self.current_leader
 
-            chosen_worker = random.choice(available_workers)
-            print(f"Líder {self.current_leader} asigna la tarea al trabajador {chosen_worker}")
-
-
-            self.predict_workers[chosen_worker] = "busy"
-
-            try:
-                response = self.send_to_worker(chosen_worker, {"action" : "predict", "sentence" : task})
-                print(f"Response from worker {chosen_worker}: {response}")
-                self.predict_workers[chosen_worker] = "free"
-                return response
-            except Exception as e:
-                print(f"Failed to assign task to worker {chosen_worker}: {e}")
-                # Si hay error, dejar al trabajador como "free"
-                self.predict_workers[chosen_worker] = "free"
-                return None
+        try:
+            # Enviar tarea al líder
+            print(f"Assigning task to leader {chosen_worker}...")
+            response = self.send_to_worker(chosen_worker, {"action": "predict", "sentence": task})
+            print(f"Response from leader {chosen_worker}: {response}")
+            return response
+        except Exception as e:
+            print(f"Failed to assign task to leader {chosen_worker}: {e}")
+            self.predict_workers[chosen_worker] = "free"  # Liberar líder si ocurre un error
+            return None
 
         
     def send_to_worker(self, worker_address, task):
