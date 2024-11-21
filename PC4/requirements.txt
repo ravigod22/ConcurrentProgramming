@@ -1,0 +1,23 @@
+# dependencias que pueden causar problemas
+Werkzeug==2.1.2
+SQLAlchemy==1.4.46
+
+# Dependencias para todo las actividades
+Flask==2.1.2
+Flask-SQLAlchemy==2.5.1
+requests==2.31.0
+
+
+# Dependencias para seguridad
+bcrypt==4.2.0
+pyjwt==2.9.0
+
+requests
+requests-mock
+
+# Proyecto
+numpy==1.23.0                # Operaciones matemáticas para los modelos
+nltk==3.8.1                  # Tokenización y procesamiento de texto
+scipy==1.10.0                # Utilidades científicas (opcional para cálculos adicionales)
+pickle-mixin                 # Para serialización/deserialización de objetos
+cryptography==41.0.0   # Encriptación y generación de claves
